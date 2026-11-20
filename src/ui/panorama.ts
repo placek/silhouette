@@ -1,4 +1,5 @@
 import type { Horizon } from '../core/horizon';
+import type { PeakHit } from '../core/peaks';
 
 const NS = 'http://www.w3.org/2000/svg';
 /** World units (SVG user units) per degree. Same scale on both axes, so the picture is angularly true. */
@@ -10,9 +11,16 @@ export interface Palette {
   fill: string;
   stroke: string;
   grid: string;
+  peak: string;
 }
 
-export const LIGHT_PALETTE: Palette = { bg: '#eaf1f8', fill: '#c3ccd6', stroke: '#1b2430', grid: '#7a8796' };
+export const LIGHT_PALETTE: Palette = {
+  bg: '#eaf1f8',
+  fill: '#c3ccd6',
+  stroke: '#1b2430',
+  grid: '#7a8796',
+  peak: '#b4320a',
+};
 
 export function readPalette(el: Element): Palette {
   const cs = getComputedStyle(el);
@@ -22,6 +30,7 @@ export function readPalette(el: Element): Palette {
     fill: v('--pano-fill', LIGHT_PALETTE.fill),
     stroke: v('--pano-stroke', LIGHT_PALETTE.stroke),
     grid: v('--pano-grid', LIGHT_PALETTE.grid),
+    peak: v('--pano-peak', LIGHT_PALETTE.peak),
   };
 }
 
@@ -167,6 +176,96 @@ function layoutLabels(labels: SceneLabel[], vb: ViewBox, unitsPerPx: number) {
   }
 }
 
+// ---- summit labels ----
+
+interface PeakItem {
+  peak: PeakHit;
+  /** World coordinates of the summit marker. */
+  x: number;
+  y: number;
+  g: SVGGElement;
+  line: SVGLineElement;
+  marker: SVGPathElement;
+  text: SVGTextElement;
+  /** Estimated label width, screen px. */
+  w: number;
+}
+
+const PEAK_FONT = 12;
+const PEAK_ROW = 15; // vertical step between stacked labels, px
+const PEAK_MAX_ROWS = 7;
+const TOP_RESERVED = 46; // px kept free for the cardinal labels
+
+/** Builds one marker+leader+label per summit and per 360° wrap copy (highest summits first). */
+function buildPeaks(peaks: PeakHit[], palette: Palette) {
+  const root = el('g', { 'data-role': 'peaks' });
+  const items: PeakItem[] = [];
+  const halo = { stroke: palette.bg, 'stroke-width': 3, 'paint-order': 'stroke', 'stroke-linejoin': 'round' };
+  for (const peak of peaks) {
+    for (let wrap = -1; wrap <= 1; wrap++) {
+      const g = el('g');
+      const line = el('line', { stroke: palette.peak, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' });
+      const marker = el('path', { d: 'M0 -4L4 3H-4Z', fill: palette.peak, stroke: palette.bg, 'stroke-width': 0.75 });
+      const text = el('text', {
+        ...halo,
+        fill: palette.stroke,
+        'font-family': 'system-ui, sans-serif',
+        'font-size': PEAK_FONT,
+        'text-anchor': 'middle',
+      });
+      const name = el('tspan', { 'font-weight': 600 });
+      name.textContent = peak.name;
+      const ele = el('tspan', { fill: palette.peak, 'font-weight': 400 });
+      ele.textContent = ` ${Math.round(peak.ele)} m`;
+      text.append(name, ele);
+      g.append(line, marker, text);
+      g.style.display = 'none';
+      root.append(g);
+      const w = (peak.name.length + 7) * PEAK_FONT * 0.55;
+      items.push({ peak, x: (peak.az + wrap * 360) * SCALE, y: -peak.angle * SCALE, g, line, marker, text, w });
+    }
+  }
+  return { root, items };
+}
+
+/**
+ * Places labels greedily (highest summit first) above their markers, stacking upward on collision.
+ * Summits that find no free spot stay hidden, so zooming in reveals more of them.
+ * `W` is the view width in screen px; all collision maths is done in screen px.
+ */
+function layoutPeaks(items: PeakItem[], vb: ViewBox, u: number, W: number) {
+  const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
+  for (const it of items) {
+    const xs = (it.x - vb.x) / u;
+    const ys = (it.y - vb.y) / u;
+    let ok = false;
+    if (xs > -it.w && xs < W + it.w && ys > TOP_RESERVED && ys < (vb.h / u) + 10) {
+      const cx = Math.min(Math.max(xs, it.w / 2 + 4), W - it.w / 2 - 4);
+      for (let r = 0; r < PEAK_MAX_ROWS && !ok; r++) {
+        const y1 = ys - 14 - r * PEAK_ROW;
+        const y0 = y1 - PEAK_FONT - 2;
+        if (y0 < TOP_RESERVED) break;
+        const box = { x0: cx - it.w / 2 - 3, x1: cx + it.w / 2 + 3, y0, y1 };
+        if (placed.some((b) => box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0)) continue;
+        placed.push(box);
+        ok = true;
+        const wx = (px: number) => vb.x + px * u;
+        const wy = (py: number) => vb.y + py * u;
+        it.marker.setAttribute('transform', `translate(${it.x} ${it.y}) scale(${u})`);
+        it.line.setAttribute('x1', String(it.x));
+        it.line.setAttribute('y1', String(it.y - 4 * u));
+        it.line.setAttribute('x2', String(it.x));
+        it.line.setAttribute('y2', String(wy(y1 + 2)));
+        it.text.setAttribute('x', String(wx(cx)));
+        it.text.setAttribute('y', String(wy(y1 - 2)));
+        it.text.setAttribute('font-size', String(PEAK_FONT * u));
+        it.text.setAttribute('stroke-width', String(3 * u));
+      }
+    }
+    it.g.style.display = ok ? '' : 'none';
+  }
+}
+
 export class PanoramaView {
   private svg: SVGSVGElement;
   private msg: HTMLElement;
@@ -175,6 +274,9 @@ export class PanoramaView {
   private bgRect: SVGRectElement;
   private world: SVGGElement;
   private showCardinals = true;
+  private showPeaks = true;
+  private peaks: PeakHit[] = [];
+  private peakScene: ReturnType<typeof buildPeaks> | null = null;
   private view: ViewBox = { x: 0, y: -100, w: 1200, h: 300 };
   private range = { min: -1, max: 1, maxAz: 0 };
 
@@ -225,7 +327,26 @@ export class PanoramaView {
     if (this.scene) this.scene.cardinals.style.display = on ? '' : 'none';
   }
 
+  get peaksVisible() {
+    return this.showPeaks;
+  }
+
+  setPeaksVisible(on: boolean) {
+    this.showPeaks = on;
+    if (this.peakScene) this.peakScene.root.style.display = on ? '' : 'none';
+    this.fitDefault(); // vertical room for labels depends on whether they are shown
+  }
+
+  /** Summits visible from the current horizon's observer (replaces the previous set). */
+  setPeaks(peaks: PeakHit[]) {
+    this.peaks = peaks;
+    this.rebuildPeaks();
+    this.applyView(this.view);
+    if (peaks.length) this.fitDefault();
+  }
+
   setHorizon(h: Horizon) {
+    this.peaks = []; // belong to the previous observer
     this.horizon = h;
     this.range = angleRange(h);
     this.rebuild();
@@ -241,7 +362,15 @@ export class PanoramaView {
     this.scene = buildScene(this.horizon, palette);
     this.world.append(this.scene.root);
     this.setCardinals(this.showCardinals);
+    this.rebuildPeaks();
     this.applyView(this.view);
+  }
+
+  private rebuildPeaks() {
+    this.peakScene?.root.remove();
+    this.peakScene = buildPeaks(this.peaks, readPalette(this.container));
+    this.peakScene.root.style.display = this.showPeaks ? '' : 'none';
+    this.world.append(this.peakScene.root);
   }
 
   // ---- view handling ----
@@ -251,7 +380,9 @@ export class PanoramaView {
   }
 
   private yBounds() {
-    return { top: -(this.range.max + 4) * SCALE, bottom: -(this.range.min - 4) * SCALE };
+    // Summit labels stack upwards, so leave extra headroom while they are shown.
+    const head = this.showPeaks && this.peaks.length ? 14 : 4;
+    return { top: -(this.range.max + head) * SCALE, bottom: -(this.range.min - 4) * SCALE };
   }
 
   private clamp(v: ViewBox): ViewBox {
@@ -272,7 +403,9 @@ export class PanoramaView {
     const c = this.clamp(v);
     this.view = c;
     this.svg.setAttribute('viewBox', `${c.x} ${c.y} ${c.w} ${c.h}`);
-    if (this.scene) layoutLabels(this.scene.labels, c, c.w / this.size().W);
+    const { W } = this.size();
+    if (this.scene) layoutLabels(this.scene.labels, c, c.w / W);
+    if (this.peakScene && this.showPeaks) layoutPeaks(this.peakScene.items, c, c.w / W, W);
   }
 
   fitDefault() {
@@ -281,7 +414,9 @@ export class PanoramaView {
     const { top, bottom } = this.yBounds();
     const w = Math.min(Math.max(((bottom - top) * W) / H, 300), 1800);
     const h = (w * H) / W;
-    this.applyView({ x: this.range.maxAz * SCALE - w / 2, y: (top + bottom) / 2 - h / 2, w, h });
+    // Centre on the highest visible summit if there is one, else on the highest point of the skyline.
+    const centreAz = this.showPeaks && this.peaks.length ? this.peaks[0].az : this.range.maxAz;
+    this.applyView({ x: centreAz * SCALE - w / 2, y: (top + bottom) / 2 - h / 2, w, h });
   }
 
   fitAll() {
@@ -356,13 +491,17 @@ export class PanoramaView {
     const scene = buildScene(this.horizon, palette);
     scene.cardinals.style.display = this.showCardinals ? '' : 'none';
     const { min, max } = this.range;
+    const withPeaks = this.showPeaks && this.peaks.length > 0;
+    const head = withPeaks ? 14 : 4;
     const vb: ViewBox = {
       x: 0,
-      y: -(max + 4) * SCALE,
+      y: -(max + head) * SCALE,
       w: 360 * SCALE,
-      h: (max - min + 8) * SCALE,
+      h: (max - min + head + 4) * SCALE,
     };
     layoutLabels(scene.labels, vb, 1.4);
+    const peakScene = buildPeaks(this.peaks, palette);
+    if (withPeaks) layoutPeaks(peakScene.items, vb, 1, vb.w);
     const svg = el('svg', {
       xmlns: NS,
       viewBox: `${vb.x} ${vb.y} ${vb.w} ${vb.h}`,
@@ -376,6 +515,7 @@ export class PanoramaView {
       title,
       el('rect', { x: vb.x, y: vb.y, width: vb.w, height: vb.h, fill: palette.bg }),
       scene.root,
+      ...(withPeaks ? [peakScene.root] : []),
     );
     return `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(svg)}\n`;
   }

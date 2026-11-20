@@ -10,6 +10,7 @@
   --pano-fill: #c3ccd6;
   --pano-stroke: #1b2430;
   --pano-grid: #7a8796;
+  --pano-peak: #b4320a;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -23,6 +24,7 @@
     --pano-fill: #1d2a38;
     --pano-stroke: #cfe0f5;
     --pano-grid: #6b7b8e;
+    --pano-peak: #ffa070;
   }
 }
 * { box-sizing: border-box; }
