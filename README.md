@@ -13,6 +13,12 @@ npm run build    # statyczny build w dist/
 
 Aplikacja jest w pełni kliencka (bez backendu). Można podać pozycję w URL: `/#49.2992,19.9496`.
 
+## Deploy (GitHub Pages)
+
+Workflow `.github/workflows/deploy.yml` buduje i publikuje `dist/` przy każdym pushu na `main` (najpierw testy). Adres: https://placek.github.io/silhouette/
+
+Jednorazowo: w repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+
 ## Jak to działa
 
 - **Dane**: [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Terrarium PNG, bez klucza). LOD zależny od odległości: z13 (<12 km), z11 (<40 km), z9 (do 100 km). Poziomy z14/15 są pomijane – pokrycie jest dziurawe (puste kafelki „no-data", np. wokół Kasprowego); brakujące piksele/kafelki zastępuje grubszy poziom.
