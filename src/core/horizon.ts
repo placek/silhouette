@@ -36,6 +36,18 @@ export interface Horizon {
 
 const DEG = 180 / Math.PI;
 
+/** Distance increment along a ray: fine near the observer, ~0.5 % of the distance further out. */
+export const rayStep = (d: number) => Math.max(20, d * 0.005);
+
+/** Eye height above sea level at the observer (NaN ground is treated as 0). */
+export function observerHeight(src: ElevationSource, lat: number, lon: number, eyeHeight: number): number {
+  const ground = src.elevationAt(lat, lon, 0);
+  return (Number.isNaN(ground) ? 0 : ground) + eyeHeight;
+}
+
+/** Combined curvature + refraction drop coefficient: apparent drop at distance d is d² · this. */
+export const curvatureCoeff = (refraction: number) => (1 - refraction) / (2 * EARTH_RADIUS);
+
 /** Skyline = for each azimuth, the maximum elevation angle along the ray (with Earth curvature and refraction). */
 export function computeHorizon(
   src: ElevationSource,
@@ -44,20 +56,19 @@ export function computeHorizon(
   options: Partial<HorizonOptions> = {},
 ): Horizon {
   const o = { ...DEFAULT_OPTIONS, ...options };
-  const ground = src.elevationAt(lat, lon, 0);
-  const h0 = (Number.isNaN(ground) ? 0 : ground) + o.eyeHeight;
+  const h0 = observerHeight(src, lat, lon, o.eyeHeight);
   const n = Math.round(360 / o.azStep);
   const angles = new Float32Array(n);
   const distances = new Float32Array(n);
   const heights = new Float32Array(n);
-  const curv = (1 - o.refraction) / (2 * EARTH_RADIUS);
+  const curv = curvatureCoeff(o.refraction);
 
   for (let i = 0; i < n; i++) {
     const az = i * o.azStep;
     let best = -Infinity;
     let bestD = 0;
     let bestH = 0;
-    for (let d = 10; d <= o.maxRange; d += Math.max(20, d * 0.005)) {
+    for (let d = 10; d <= o.maxRange; d += rayStep(d)) {
       const [la, lo] = destination(lat, lon, az, d);
       const h = src.elevationAt(la, lo, d);
       if (Number.isNaN(h)) continue;

@@ -36,3 +36,13 @@ export function worldPixel(lat: number, lon: number, z: number): [number, number
 export function metersPerPixel(lat: number, z: number): number {
   return (156543.03392 * Math.cos(lat * RAD)) / 2 ** z;
 }
+
+/** Initial great-circle bearing from point 1 to point 2, degrees clockwise from north in [0, 360). */
+export function bearing(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const p1 = lat1 * RAD;
+  const p2 = lat2 * RAD;
+  const dl = (lon2 - lon1) * RAD;
+  const y = Math.sin(dl) * Math.cos(p2);
+  const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+  return (((Math.atan2(y, x) / RAD) % 360) + 360) % 360;
+}

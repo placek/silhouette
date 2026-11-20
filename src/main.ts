@@ -9,6 +9,13 @@ const info = $('info');
 const coordInput = $<HTMLInputElement>('coord');
 const downloadBtn = $<HTMLButtonElement>('download');
 const cardinalsBtn = $<HTMLButtonElement>('toggle-cardinals');
+const peaksBtn = $<HTMLButtonElement>('toggle-peaks');
+let elevationText = '';
+let peaksText = '';
+
+const updateInfo = () => {
+  info.textContent = [elevationText, peaksText].filter(Boolean).join(' · ');
+};
 
 const pano = new PanoramaView($('pano'));
 const worker = new Worker(new URL('./worker/horizon.worker.ts', import.meta.url), { type: 'module' });
@@ -39,7 +46,9 @@ function setObserver(lat: number, lon: number, recenter: boolean) {
 
 function compute(lat: number, lon: number) {
   const id = ++requestId;
-  info.textContent = 'Pobieranie danych terenu…';
+  elevationText = 'Pobieranie danych terenu…';
+  peaksText = '';
+  updateInfo();
   if (!pano.current) pano.setMessage('Pobieranie danych terenu…');
   worker.postMessage({ id, lat, lon } satisfies ComputeRequest);
 }
@@ -48,19 +57,31 @@ worker.onmessage = (ev: MessageEvent<WorkerMessage>) => {
   const m = ev.data;
   if (m.id !== requestId) return;
   if (m.type === 'progress') {
-    info.textContent =
-      m.stage === 'tiles' ? `Pobieranie danych terenu… ${m.done}/${m.total}` : 'Obliczanie obrysu…';
+    elevationText = m.stage === 'tiles' ? `Pobieranie danych terenu… ${m.done}/${m.total}` : 'Obliczanie obrysu…';
+    updateInfo();
   } else if (m.type === 'result') {
     showResult(m.horizon);
+    peaksText = 'szczyty: ładowanie…';
+    updateInfo();
+  } else if (m.type === 'peaks') {
+    pano.setPeaks(m.peaks);
+    peaksText = `szczyty: ${m.peaks.length} widocznych`;
+    updateInfo();
+  } else if (m.type === 'peaks-error') {
+    peaksText = 'szczyty: nie udało się pobrać';
+    updateInfo();
+    console.warn('Peaks unavailable:', m.message);
   } else {
-    info.textContent = `Błąd: ${m.message}`;
+    elevationText = `Błąd: ${m.message}`;
+    updateInfo();
     if (!pano.current) pano.setMessage(`Nie udało się pobrać danych: ${m.message}`);
   }
 };
 
 function showResult(h: Horizon) {
   pano.setHorizon(h);
-  info.textContent = `Wysokość terenu ${Math.round(h.groundElevation)} m n.p.m. + ${h.eyeHeight} m (oko)`;
+  elevationText = `Wysokość terenu ${Math.round(h.groundElevation)} m n.p.m. + ${h.eyeHeight} m (oko)`;
+  updateInfo();
   downloadBtn.disabled = false;
 }
 
@@ -79,6 +100,12 @@ cardinalsBtn.addEventListener('click', () => {
   const on = !pano.cardinalsVisible;
   pano.setCardinals(on);
   cardinalsBtn.setAttribute('aria-pressed', String(on));
+});
+
+peaksBtn.addEventListener('click', () => {
+  const on = !pano.peaksVisible;
+  pano.setPeaksVisible(on);
+  peaksBtn.setAttribute('aria-pressed', String(on));
 });
 
 downloadBtn.addEventListener('click', () => {
