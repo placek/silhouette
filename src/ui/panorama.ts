@@ -25,16 +25,22 @@ export function readPalette(el: Element): Palette {
   };
 }
 
-const CARDINALS: { az: number; label: string; major: boolean }[] = [
-  { az: 0, label: 'N', major: true },
-  { az: 45, label: 'NE', major: false },
-  { az: 90, label: 'E', major: true },
-  { az: 135, label: 'SE', major: false },
-  { az: 180, label: 'S', major: true },
-  { az: 225, label: 'SW', major: false },
-  { az: 270, label: 'W', major: true },
-  { az: 315, label: 'NW', major: false },
+const CARDINALS: { az: number; label: string; name: string; major: boolean }[] = [
+  { az: 0, label: 'N', name: 'północ', major: true },
+  { az: 45, label: 'NE', name: 'północny wschód', major: false },
+  { az: 90, label: 'E', name: 'wschód', major: true },
+  { az: 135, label: 'SE', name: 'południowy wschód', major: false },
+  { az: 180, label: 'S', name: 'południe', major: true },
+  { az: 225, label: 'SW', name: 'południowy zachód', major: false },
+  { az: 270, label: 'W', name: 'zachód', major: true },
+  { az: 315, label: 'NW', name: 'północny zachód', major: false },
 ];
+
+interface SceneLabel {
+  text: SVGTextElement;
+  sub: SVGTextElement;
+  x: number;
+}
 
 export interface ViewBox {
   x: number;
@@ -102,7 +108,7 @@ function buildScene(h: Horizon, palette: Palette) {
   );
 
   const cardinals = el('g', { 'data-role': 'cardinals' });
-  const labels: { text: SVGTextElement; x: number }[] = [];
+  const labels: SceneLabel[] = [];
   for (let wrap = -1; wrap <= 1; wrap++) {
     for (const c of CARDINALS) {
       const x = (c.az + wrap * 360) * SCALE;
@@ -115,14 +121,23 @@ function buildScene(h: Horizon, palette: Palette) {
           'vector-effect': 'non-scaling-stroke',
         }),
       );
+      const halo = { stroke: palette.bg, 'stroke-width': 3, 'paint-order': 'stroke', 'stroke-linejoin': 'round' };
       const t = el('text', {
+        ...halo,
         fill: palette.stroke,
         'font-family': 'system-ui, sans-serif',
         'font-weight': c.major ? 700 : 500,
       });
       t.textContent = c.label;
-      cardinals.append(t);
-      labels.push({ text: t, x });
+      const sub = el('text', {
+        ...halo,
+        fill: palette.grid,
+        'font-family': 'system-ui, sans-serif',
+        'font-weight': 400,
+      });
+      sub.textContent = `${c.name} · ${c.az}°`;
+      cardinals.append(t, sub);
+      labels.push({ text: t, sub, x });
     }
   }
   root.append(cardinals);
@@ -130,18 +145,25 @@ function buildScene(h: Horizon, palette: Palette) {
 }
 
 /** Position labels at the top of the visible area, with constant on-screen size. */
-function layoutLabels(labels: { text: SVGTextElement; x: number }[], vb: ViewBox, unitsPerPx: number) {
-  const fs = 13 * unitsPerPx;
-  for (const { text, x } of labels) {
-    const visible = x > vb.x - 40 * unitsPerPx && x < vb.x + vb.w + 40 * unitsPerPx;
-    text.style.display = visible ? '' : 'none';
+function layoutLabels(labels: SceneLabel[], vb: ViewBox, unitsPerPx: number) {
+  const u = unitsPerPx;
+  for (const { text, sub, x } of labels) {
+    const visible = x > vb.x - 90 * u && x < vb.x + vb.w + 90 * u;
+    text.style.display = sub.style.display = visible ? '' : 'none';
     if (!visible) continue;
-    const nearLeft = x - vb.x < 14 * unitsPerPx;
-    const nearRight = vb.x + vb.w - x < 14 * unitsPerPx;
-    text.setAttribute('x', String(x + (nearLeft ? 4 : nearRight ? -4 : 0) * unitsPerPx));
-    text.setAttribute('y', String(vb.y + 20 * unitsPerPx));
-    text.setAttribute('font-size', String(fs));
-    text.setAttribute('text-anchor', nearLeft ? 'start' : nearRight ? 'end' : 'middle');
+    // Labels are up to ~120 px wide; anchor them inward when the line is near an edge.
+    const nearLeft = x - vb.x < 60 * u;
+    const nearRight = vb.x + vb.w - x < 60 * u;
+    const anchor = nearLeft ? 'start' : nearRight ? 'end' : 'middle';
+    const lx = x + (nearLeft ? 4 : nearRight ? -4 : 0) * u;
+    text.setAttribute('x', String(lx));
+    text.setAttribute('y', String(vb.y + 20 * u));
+    text.setAttribute('font-size', String(14 * u));
+    text.setAttribute('text-anchor', anchor);
+    sub.setAttribute('x', String(lx));
+    sub.setAttribute('y', String(vb.y + 34 * u));
+    sub.setAttribute('font-size', String(11 * u));
+    sub.setAttribute('text-anchor', anchor);
   }
 }
 
