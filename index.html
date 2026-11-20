@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Silhouette – panorama z punktu</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M0 26 L8 14 L12 18 L20 6 L26 16 L32 12 V32 H0Z' fill='%23345'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <header class="bar">
+      <h1>Silhouette</h1>
+      <form id="coord-form" autocomplete="off">
+        <input id="coord" type="text" inputmode="decimal" spellcheck="false" aria-label="Współrzędne (szerokość, długość)" placeholder="49.2992, 19.9496" />
+        <button type="submit">Ustaw</button>
+      </form>
+      <span id="info" class="info" aria-live="polite"></span>
+      <span class="spacer"></span>
+      <button id="toggle-cardinals" class="chip" aria-pressed="true" type="button">Strony świata</button>
+      <button id="download" type="button" disabled>Pobierz SVG</button>
+    </header>
+    <main>
+      <section id="map" aria-label="Mapa"></section>
+      <section id="pano" aria-label="Panorama"></section>
+    </main>
+    <footer>
+      Wysokości: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Terrain Tiles</a>
+      (Mapzen, NASADEM/SRTM, EU-DEM i inne) · Mapa: © OpenStreetMap, © OpenTopoMap
+    </footer>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
